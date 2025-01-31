@@ -11,6 +11,7 @@ from selenium.webdriver.chrome.options import Options
 from datetime import datetime
 from PIL import Image, ImageEnhance, ImageFilter
 
+import requests
 import easyocr as eocr
 import locale
 import numpy as np
@@ -51,6 +52,42 @@ class DownloadRetroativo:
     def slp(self, seconds):
         time.sleep(seconds)
 
+    #def dados_jsonGET(self):
+     #       urlAPI = "URL DA API"
+      #      responseGet = requests.get(urlAPI)
+#
+ #           if responseGet.status_code == 200:
+  #              dados = responseGet.json()
+#            for item in dados:
+  #              dataAPI = item.get('data_diario')
+   #             tribunalAPI = item.get('tribunal')
+    #        
+     #       print(dataAPI, tribunalAPI)
+#
+ #   def dados_jsonPOST(self):
+  #          urlAPI = "URL DA API"
+   #         caminho_pdf = "diarios/" + self.gerar_nome_arquivo()
+#
+ #           if os.path.exists(caminho_pdf):
+  #              info = {
+   #                 "nome": self.gerar_nome_arquivo(),
+    #                "status_leitura": "teste",
+     #           }
+      #          with open(caminho_pdf, 'rb') as file:
+#
+ #                   arquivo = {
+  #                      'arquivo_pdf': (os.path.basename(caminho_pdf), file, 'application/pdf')  # Passa o arquivo
+   #                 }
+#
+ #                   response_post = requests.post(urlAPI, data=info, files=arquivo)
+#
+ #                   if response_post.status_code == 201:
+  #                      print("Dados enviados com sucesso!")
+   #                     resposta_json = response_post.json()
+    #                    print(resposta_json)
+     #               else:
+      #                  print("Erro ao enviar dados para a API:", response_post.status_code)
+      
     def preprocess_image(self, image_path):
         img = Image.open(image_path)
         contrast = ImageEnhance.Contrast(img)
