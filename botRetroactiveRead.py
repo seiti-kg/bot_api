@@ -7,10 +7,11 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.chrome.options import Options
+from DataManipulator import DataManipulator
 
 from datetime import datetime
 from PIL import Image, ImageEnhance, ImageFilter
-
+ 
 import requests
 import easyocr as eocr
 import locale
@@ -132,6 +133,30 @@ class DownloadRetroativo:
     def gerar_nome_arquivo(self):
         data_obj = datetime.strptime(self.json_teste, "%d-%m-%Y")
         return f"SI{data_obj.strftime('%Y%m%d')}.PDF"
+    
+    def buscar_diario(self):
+        opcoes_data = self.driver.find_elements(By.XPATH, "/html/body/div[2]/table/tbody/tr/td/table/tbody/tr")
+        data_encontrada = False
+        for opcao in opcoes_data:
+            try:
+                data_texto = opcao.find_element(By.XPATH, ".//td/li/a").text.strip()
+                print(data_texto)
+                if data_texto == self.data_formatada:
+                    print("Data encontrada!")
+                    data_encontrada = True
+                    opcao_link = opcao.find_element(By.XPATH, ".//td/li/a")
+                    WebDriverWait(self.driver, 10).until(
+                        EC.element_to_be_clickable(opcao_link)
+                    )
+                    opcao_link.click()
+                    self.driver.switch_to.window(self.driver.window_handles[-1])
+                    break     
+            except Exception as e:
+                print(e)
+        if not data_encontrada:
+            print("Data não encontrada")
+            return False
+        return True
 
     def captchaSolver(self):
         try:
@@ -221,6 +246,12 @@ class DownloadRetroativo:
 
     def executar(self):
         self.acessar_site()
+        if not self.buscar_diario():  
+            print("Indo para o diário mais recente")
+            manipulator = DataManipulator.passar_dia_util(self.data_formatada)
+            manipulator.passar_dia_util(self.data_formatada)
+            return self.executar()
+        
         while not self.captchaSolver():
             self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.F5)
             print("Tentando CAPTCHA novamente")
@@ -231,7 +262,7 @@ class DownloadRetroativo:
 
 
 if __name__ == "__main__":
-    json_teste = "25-01-2021"  # A data de teste
+    json_teste = "26-01-2025"  # A data de teste
     diario = DownloadRetroativo(json_teste)
     diario.executar()
 
