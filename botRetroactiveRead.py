@@ -1,13 +1,15 @@
 from selenium import webdriver;
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.action_chains import ActionChains
+from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.chrome.options import Options
 from DataManipulator import DataManipulator
+
 
 from datetime import datetime
 from PIL import Image, ImageEnhance, ImageFilter
@@ -35,12 +37,11 @@ class DownloadRetroativo:
             "safebrowsing.enabled": "false"
         })
 
-        self.PATH = "chromedriver.exe"
-        self.service = Service(self.PATH)
-        self.driver = webdriver.Chrome(service=self.service, options=self.chrome_options)
+        self.driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=self.chrome_options)
 
         self.json_teste = json_teste
         self.data_formatada = self.get_data_formatada()
+        self.dia_util_formatado = json_teste
 
         locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
 
@@ -91,25 +92,26 @@ class DownloadRetroativo:
       
     def preprocess_image(self, image_path):
         img = Image.open(image_path)
+        
+        width, height = img.size
+        new_width = int(width * 1.5)  
+        new_height = int(height * 1.5)  
+        img = img.resize((new_width, new_height), Image.LANCZOS) 
         contrast = ImageEnhance.Contrast(img)
         sharpness = ImageEnhance.Sharpness(img)
         img = img.filter(ImageFilter.SMOOTH)
-        img = contrast.enhance(6.0)
-        img = sharpness.enhance(8.0)
+        img = contrast.enhance(4.0)
+        img = sharpness.enhance(4.0)
         img_rgb = img.convert('RGB')
         np_img = np.array(img_rgb)
-
-        black_mask = np_img[:, :, 0] <= 50
-        np_img[black_mask] = np_img[black_mask] + 60
-
-        red_min = 25
-        red_mask = (np_img[:, :, 0] >= red_min) & (np_img[:, :, 1] <= 100) & (np_img[:, :, 2] <= 100)
-        np_img[~red_mask] = 255
-
+        red_mask = (np_img[:, :, 0] >= 100) & (np_img[:, :, 1] <= 100) & (np_img[:, :, 2] <= 100)
+        np_img[~red_mask] = 150 
         img_red = Image.fromarray(np_img)
         preprocessed_image_path = 'preprocessed_captcha.png'
         img_red.save(preprocessed_image_path)
+        
         return img_red
+
 
     def monitorar_download(self, nome_arquivo_base):
         tentativas = 0
@@ -130,8 +132,8 @@ class DownloadRetroativo:
             tentativas += 1
         return False
 
-    def gerar_nome_arquivo(self):
-        data_obj = datetime.strptime(self.json_teste, "%d-%m-%Y")
+    def gerar_nome_arquivo(self, data):
+        data_obj = datetime.strptime(data, "%d-%m-%Y")
         return f"SI{data_obj.strftime('%Y%m%d')}.PDF"
     
     def buscar_diario(self):
@@ -196,17 +198,7 @@ class DownloadRetroativo:
 
         self.slp(2)
 
-        nome_arquivo = self.gerar_nome_arquivo()
-        sucesso = self.monitorar_download(nome_arquivo)
-
-        if sucesso:
-            print("Download com sucesso")
-            return True
-        else:
-            print("Falha no download")
-            return False
-
-    def acessar_site(self):
+    def acessar_site(self, data_para_enviar):
         self.driver.get("https://www.tjmg.jus.br/portal-tjmg/")
         self.driver.maximize_window()
         self.slp(3)
@@ -241,28 +233,74 @@ class DownloadRetroativo:
 
             data = self.driver.find_element(By.NAME, "data")
             data.click()
-            data.send_keys(self.json_teste)
+            data.send_keys(data_para_enviar)
             self.slp(1)
+
+    def buscar_aviso(self):
+        try:
+            manipulator = DataManipulator(self.json_teste)
+            aviso = WebDriverWait(self.driver, 2).until(
+                EC.visibility_of_element_located((By.CLASS_NAME, "aviso"))
+            )
+            
+            if aviso.is_displayed():
+                print("Aviso apareceu! Não há diário para a data especificada. É um recesso ou dia facultativo")
+                
+                data_fornecida_obj = datetime.strptime(self.dia_util_formatado, "%d-%m-%Y") 
+                dia_util_formatado = manipulator.passar_dia_util(data_fornecida_obj)
+                
+                print(f"Próximo dia útil: {dia_util_formatado.strftime('%d-%m-%Y')}")
+                self.dia_util_formatado = dia_util_formatado.strftime('%d-%m-%Y') 
+
+                self.acessar_site(self.dia_util_formatado)  
+                
+                return True  
+            
+            print("Aviso não apareceu. Tentando novamente.")
+            return False  
+            
+        except Exception as e:
+            print(f"Erro ao buscar aviso")
+            return False
 
     def executar(self):
-        self.acessar_site()
-        if not self.buscar_diario():  
-            print("Indo para o diário mais recente")
-            manipulator = DataManipulator.passar_dia_util(self.data_formatada)
-            manipulator.passar_dia_util(self.data_formatada)
-            return self.executar()
-        
-        while not self.captchaSolver():
-            self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.F5)
-            print("Tentando CAPTCHA novamente")
-            self.slp(1)
+        manipulator = DataManipulator(self.dia_util_formatado)
+        dia_util = manipulator.autenticar_recesso(self.dia_util_formatado)  
+        if dia_util:
+            print(f"É dia útil! Verificando se há diário.")
+            self.acessar_site(dia_util)
+            while True:
+                try: 
+                    if self.buscar_aviso():
+                        print("Indo para o diário mais recente")
+                        break
 
-        print("Download completo!")
+                finally:
+                    nome_arquivo = self.gerar_nome_arquivo(dia_util) 
+                    download_completo = self.monitorar_download(nome_arquivo) 
+
+                    print(nome_arquivo)
+
+                    if download_completo:
+                        print("Download concluído!")
+                        break
+                    else:
+                        print("Tentando CAPTCHA novamente")
+                        self.captchaSolver()
+                        self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.F5) 
+                        self.slp(1)
+        else:
+            print(f"Próximo dia útil: {self.dia_util_formatado}")
+            self.acessar_site(self.dia_util_formatado)
+
+
+        print("Processo finalizado!")
         self.driver.quit()
 
 
+json_teste = "13-02-2024"  ##TESTE
+
 if __name__ == "__main__":
-    json_teste = "26-01-2025"  # A data de teste
     diario = DownloadRetroativo(json_teste)
     diario.executar()
 
