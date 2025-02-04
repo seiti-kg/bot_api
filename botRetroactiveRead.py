@@ -3,6 +3,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.common.exceptions import TimeoutException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
@@ -115,7 +116,7 @@ class DownloadRetroativo:
 
     def monitorar_download(self, nome_arquivo_base):
         tentativas = 0
-        while tentativas < 1:
+        while tentativas < 3:
             arquivos = os.listdir(self.download_dir)
             for arquivo in arquivos:
                 if arquivo.startswith(nome_arquivo_base) and arquivo.endswith('.crdownload'):
@@ -212,6 +213,9 @@ class DownloadRetroativo:
                 EC.element_to_be_clickable((By.CLASS_NAME, "termo-uso-btn"))
             )
             cookies.click()
+        except TimeoutException:
+            pass
+        
         finally:
             caminho_dje = self.driver.find_element(By.XPATH, '//*//div[@class=\'introduction\'][contains(text(),\'Diário do Judiciário eletrônico do Tribunal de Justiça de MG\')]')
             caminho_dje.click()
@@ -236,6 +240,12 @@ class DownloadRetroativo:
             data.send_keys(data_para_enviar)
             self.slp(1)
 
+    def atualizar_data(self, nova_data):
+        data = self.driver.find_element(By.NAME, "data")
+        data.clear() 
+        data.send_keys(nova_data)
+        self.slp(1)
+
     def buscar_aviso(self):
         try:
             manipulator = DataManipulator(self.json_teste)
@@ -249,10 +259,10 @@ class DownloadRetroativo:
                 data_fornecida_obj = datetime.strptime(self.dia_util_formatado, "%d-%m-%Y") 
                 dia_util_formatado = manipulator.passar_dia_util(data_fornecida_obj)
                 
-                print(f"Próximo dia útil: {dia_util_formatado.strftime('%d-%m-%Y')}")
                 self.dia_util_formatado = dia_util_formatado.strftime('%d-%m-%Y') 
+                print(f"Próximo dia útil: {dia_util_formatado}")
 
-                self.acessar_site(self.dia_util_formatado)  
+                #self.acessar_site(self.dia_util_formatado)   
                 
                 return True  
             
@@ -273,7 +283,8 @@ class DownloadRetroativo:
                 try: 
                     if self.buscar_aviso():
                         print("Indo para o diário mais recente")
-                        break
+                        dia_util = manipulator.autenticar_recesso(self.dia_util_formatado)
+                        self.atualizar_data(dia_util)
 
                 finally:
                     nome_arquivo = self.gerar_nome_arquivo(dia_util) 
@@ -298,10 +309,10 @@ class DownloadRetroativo:
         self.driver.quit()
 
 
-json_teste = "13-02-2024"  ##TESTE
+json_teste = "26-01-2025"  ##TESTE
 
 if __name__ == "__main__":
-    diario = DownloadRetroativo(json_teste)
+    diario = DownloadRetroativo(json_teste)  
     diario.executar()
 
 
