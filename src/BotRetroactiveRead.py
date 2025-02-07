@@ -10,6 +10,12 @@ from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.chrome.options import Options
 from DataManipulator import DataManipulator
+from database.models import BancoDeDadosFalso
+
+from pydantic import BaseModel
+from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks
+from configuration import collection
+from database.models import Diario
 
 
 from datetime import datetime
@@ -20,13 +26,15 @@ import easyocr as eocr
 import locale
 import numpy as np
 import time
+import json
 import os
 import re
 
 
 class DownloadRetroativo:
     def __init__(self, json_teste):
-        self.download_dir = os.path.join(os.getcwd(), "diarios")
+        self.banco_falso = BancoDeDadosFalso()
+        self.download_dir = os.path.join(os.getcwd(), "TJMG")
         if not os.path.exists(self.download_dir):
             os.makedirs(self.download_dir)
 
@@ -54,42 +62,6 @@ class DownloadRetroativo:
 
     def slp(self, seconds):
         time.sleep(seconds)
-
-    #def dados_jsonGET(self):
-     #       urlAPI = "URL DA API"
-      #      responseGet = requests.get(urlAPI)
-#
- #           if responseGet.status_code == 200:
-  #              dados = responseGet.json()
-#            for item in dados:
-  #              dataAPI = item.get('data_diario')
-   #             tribunalAPI = item.get('tribunal')
-    #        
-     #       print(dataAPI, tribunalAPI)
-#
- #   def dados_jsonPOST(self):
-  #          urlAPI = "URL DA API"
-   #         caminho_pdf = "diarios/" + self.gerar_nome_arquivo()
-#
- #           if os.path.exists(caminho_pdf):
-  #              info = {
-   #                 "nome": self.gerar_nome_arquivo(),
-    #                "status_leitura": "teste",
-     #           }
-      #          with open(caminho_pdf, 'rb') as file:
-#
- #                   arquivo = {
-  #                      'arquivo_pdf': (os.path.basename(caminho_pdf), file, 'application/pdf')  # Passa o arquivo
-   #                 }
-#
- #                   response_post = requests.post(urlAPI, data=info, files=arquivo)
-#
- #                   if response_post.status_code == 201:
-  #                      print("Dados enviados com sucesso!")
-   #                     resposta_json = response_post.json()
-    #                    print(resposta_json)
-     #               else:
-      #                  print("Erro ao enviar dados para a API:", response_post.status_code)
       
     def preprocess_image(self, image_path):
         img = Image.open(image_path)
@@ -232,10 +204,14 @@ class DownloadRetroativo:
             select = Select(escolha)
             select.select_by_visible_text("2ª inst. Judicial")
 
-            body = self.driver.find_element(By.TAG_NAME, "body")
-            ActionChains(self.driver).move_to_element(body).click().perform()
+            self.slp(1)
 
-            data = self.driver.find_element(By.NAME, "data")
+            body = self.driver.find_element(By.TAG_NAME, "body")
+            #ActionChains(self.driver).move_to_element(body).click().perform()
+
+            data = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.NAME, "data"))
+            )
             data.click()
             data.send_keys(data_para_enviar)
             self.slp(1)
@@ -262,8 +238,6 @@ class DownloadRetroativo:
                 self.dia_util_formatado = dia_util_formatado.strftime('%d-%m-%Y') 
                 print(f"Próximo dia útil: {dia_util_formatado}")
 
-                #self.acessar_site(self.dia_util_formatado)   
-                
                 return True  
             
             print("Aviso não apareceu. Tentando novamente.")
@@ -272,48 +246,98 @@ class DownloadRetroativo:
         except Exception as e:
             print(f"Erro ao buscar aviso")
             return False
+        
+    def salvar_diario_no_banco(self, nome_arquivo, caminho_arquivo):
+        data_str = nome_arquivo[2:-4]
+        data_formatada = datetime.strptime(data_str, "%Y%m%d").strftime("%Y-%m-%d")
+        dia_dir = os.path.join(self.download_dir, data_formatada)
+
+        if not os.path.exists(dia_dir):
+            os.makedirs(dia_dir)
+
+        caminho_arquivo_final = os.path.join(dia_dir, nome_arquivo)
+        caminho_arquivo_final = os.path.relpath(caminho_arquivo_final, start=os.getcwd())
+        os.rename(caminho_arquivo, caminho_arquivo_final)
+
+
+        novo_diario = {
+            "data_diario": data_formatada,
+            "tribunal": "TJMG",
+            "cadernos": [{
+                "caderno": nome_arquivo,
+                "status_leitura": False,
+                "caminho_arquivo": caminho_arquivo_final
+            }]
+        }
+        self.banco_falso.inserir(novo_diario)
+
+    def verificar_arquivo_existente(self, nome_arquivo):
+        data_str = nome_arquivo[2:-4]
+        data_formatada = datetime.strptime(data_str, "%Y%m%d").strftime("%Y-%m-%d")
+        dia_dir = os.path.join(self.download_dir, data_formatada)
+
+        if os.path.exists(dia_dir):
+            arquivos = os.listdir(dia_dir)
+            if nome_arquivo in arquivos:
+                print(f"O arquivo {nome_arquivo} já foi baixado para o dia {data_formatada}. Pulando para o próximo dia.")
+                return True
+        return False
 
     def executar(self):
-        manipulator = DataManipulator(self.dia_util_formatado)
-        dia_util = manipulator.autenticar_recesso(self.dia_util_formatado)  
-        if dia_util:
-            print(f"É dia útil! Verificando se há diário.")
-            self.acessar_site(dia_util)
-            while True:
-                try: 
-                    if self.buscar_aviso():
-                        print("Indo para o diário mais recente")
-                        dia_util = manipulator.autenticar_recesso(self.dia_util_formatado)
-                        self.atualizar_data(dia_util)
+        while True:
+            manipulator = DataManipulator(self.dia_util_formatado)
+            dia_util = manipulator.autenticar_recesso(self.dia_util_formatado)  
 
-                finally:
-                    nome_arquivo = self.gerar_nome_arquivo(dia_util) 
-                    download_completo = self.monitorar_download(nome_arquivo) 
+            if dia_util:
+                print(f"É dia útil! Verificando se há diário.")
+                self.atualizar_data(self.dia_util_formatado)
 
-                    print(nome_arquivo)
+                while True:
+                    try: 
+                        if self.buscar_aviso():
+                            print("Indo para o diário mais recente")
+                            dia_util = manipulator.autenticar_recesso(self.dia_util_formatado)
+                            self.atualizar_data(dia_util)
 
-                    if download_completo:
-                        print("Download concluído!")
-                        break
-                    else:
-                        print("Tentando CAPTCHA novamente")
-                        self.captchaSolver()
-                        self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.F5) 
-                        self.slp(1)
-        else:
-            print(f"Próximo dia útil: {self.dia_util_formatado}")
-            self.acessar_site(self.dia_util_formatado)
+                    finally:
+                        nome_arquivo = self.gerar_nome_arquivo(self.dia_util_formatado)
+                        
+                        if self.verificar_arquivo_existente(nome_arquivo):
+                            self.dia_util_formatado = manipulator.passar_dia_util_str(self.dia_util_formatado)
+                            self.atualizar_data(self.dia_util_formatado)
+                            continue
+
+                        download_completo = self.monitorar_download(nome_arquivo)
+
+                        if download_completo:
+                            print(f"Download concluído para {self.dia_util_formatado}!")
+
+                            caminho_arquivo = os.path.join(self.download_dir, nome_arquivo)
+                            caminho_relativo = os.path.relpath(caminho_arquivo, start=os.getcwd())
+                            self.salvar_diario_no_banco(nome_arquivo, caminho_relativo)
+
+                            print(f"Diário salvo no banco com a data {self.dia_util_formatado} e caminho {caminho_arquivo}")
+                            self.dia_util_formatado = manipulator.passar_dia_util_str(self.dia_util_formatado)
+                            self.atualizar_data(self.dia_util_formatado)
+                            self.banco_falso.listar_diarios()
+                            break
+                        else:
+                            print(f"Falha ao baixar o arquivo para {self.dia_util_formatado}. Tentando novamente...")
+                            self.captchaSolver()
+                            self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.F5)
+                            self.slp(1)
+
+            else:
+                print(f"Próximo dia útil: {self.dia_util_formatado}")
+                self.atualizar_data(self.dia_util_formatado)
 
 
-        print("Processo finalizado!")
-        self.driver.quit()
 
-
-json_teste = "26-01-2025"  ##TESTE
+'''dataDeHoje = datetime.now()
+json_teste = dataDeHoje.strftime("%d-%m-%Y")
 
 if __name__ == "__main__":
     diario = DownloadRetroativo(json_teste)  
-    diario.executar()
-
+    diario.executar()'''
 
     

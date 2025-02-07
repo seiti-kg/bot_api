@@ -1,0 +1,10 @@
+selenium
+webdriver-manager
+pillow
+numpy
+easyocr
+pydantic
+fastapi
+requests
+python-dateutil
+workalendar

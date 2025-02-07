@@ -1,0 +1,25 @@
+[project]
+name = "teste-bot-api"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "seiti-kg",email = "luca69892@gmail.com"}
+]
+readme = "README.md"
+requires-python = "3.12.*"
+dependencies = [
+    "fastapi (>=0.115.8,<0.116.0)",
+    "selenium (>=4.28.1,<5.0.0)",
+    "easyocr (>=1.7.2,<2.0.0)",
+    "numpy (>=2.2.2,<3.0.0)",
+    "webdriver-manager (>=4.0.2,<5.0.0)",
+    "workalendar (>=17.0.0,<18.0.0)",
+    "pydantic (>=2.10.6,<3.0.0)",
+    "pymongo (>=4.11,<5.0)",
+    "uvicorn (>=0.34.0,<0.35.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

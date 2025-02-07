@@ -24,6 +24,15 @@ class DataManipulator:
         except Exception as e:
             print(f"Erro ao passar dia útil: {e}")
 
+    def passar_dia_util_str(self, data_fornecida):
+        dia_util_formatado = self.passar_dia_util(datetime.strptime(data_fornecida, "%d-%m-%Y"))
+        if dia_util_formatado:
+            print(f"Próximo dia útil: {dia_util_formatado.strftime('%d-%m-%Y')}")
+            return dia_util_formatado.strftime('%d-%m-%Y')  
+        else:
+            print("Erro ao encontrar o próximo dia útil.")
+            return None
+
     def autenticar_recesso(self, data_fornecida):
         dia_util = self.get_dia_util(data_fornecida) 
         
@@ -34,7 +43,6 @@ class DataManipulator:
             dia_util_formatado = self.passar_dia_util(datetime.strptime(data_fornecida, "%d-%m-%Y"))
             if dia_util_formatado:
                 print(f"{data_fornecida} não é dia útil, é um recesso ou ponto facultativo!")
-                print(f"Próximo dia útil: {dia_util_formatado.strftime('%d-%m-%Y')}")
                 return dia_util_formatado.strftime('%d-%m-%Y')  
             else:
                 print("Erro ao encontrar o próximo dia útil.")
