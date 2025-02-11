@@ -19,6 +19,20 @@ dependencies = [
     "uvicorn (>=0.34.0,<0.35.0)"
 ]
 
+[tool.taskipy]
+version = "1.10.0"
+
+[tool.taskipy.tasks]
+start_server = "python src/scripts/server.py"
+tests = "pytest tests/"
+run = 'fastapi dev src/main.py'
+lint = "flake8 src"
+
+[tool.poetry]
+name = "teste-bot-api"
+version = "0.1.0"
+packages = [{ include = "teste_bot_api", from = "src" }]
+
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

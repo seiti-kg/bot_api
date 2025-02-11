@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  selenium-chromium:
+    image: selenium/standalone-chromium:latest
+    container_name: selenium-chromium
+    ports:
+      - "4444:4444"
+    restart: always
+    volumes:
+      - "C:\\Users\\Revio\\OneDrive\\Área de Trabalho\\REVIO\\Códigos provisórios\\api_bd_falso\\TJMG:/home/seluser/Downloads"
+    shm_size: 2g
+    networks:
+      - app_network
+
+  app:
+    image: bot_retroativo_api:latest
+    container_name: download_retroativo
+    depends_on:
+      - selenium-chromium
+    environment:
+      - SELENIUM_HOST=selenium-chromium
+    ports:
+      - "8000:8000"
+    volumes:
+      - /TJMG
+    command: ["poetry", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge
+
+

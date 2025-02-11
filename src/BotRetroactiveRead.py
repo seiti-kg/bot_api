@@ -2,21 +2,13 @@ from selenium import webdriver;
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
-from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import TimeoutException
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.chrome.options import Options
-from DataManipulator import DataManipulator
-from database.models import BancoDeDadosFalso
-
-from pydantic import BaseModel
-from fastapi import FastAPI, APIRouter, HTTPException, BackgroundTasks
-from configuration import collection
-from database.models import Diario
-
+from .DataManipulator import DataManipulator
 
 from datetime import datetime
 from PIL import Image, ImageEnhance, ImageFilter
@@ -26,19 +18,18 @@ import easyocr as eocr
 import locale
 import numpy as np
 import time
-import json
 import os
 import re
 
 
 class DownloadRetroativo:
     def __init__(self, json_teste):
-        self.banco_falso = BancoDeDadosFalso()
         self.download_dir = os.path.join(os.getcwd(), "TJMG")
         if not os.path.exists(self.download_dir):
             os.makedirs(self.download_dir)
 
         self.chrome_options = Options()
+        self.chrome_options.binary_location = "/usr/bin/chromium"  
         self.chrome_options.add_experimental_option("prefs", {
             "download.default_directory": self.download_dir,
             "download.prompt_for_download": False,
@@ -46,7 +37,10 @@ class DownloadRetroativo:
             "safebrowsing.enabled": "false"
         })
 
-        self.driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=self.chrome_options)
+        self.driver = webdriver.Remote(
+            command_executor='http://localhost:4444/wd/hub', 
+            options=self.chrome_options
+        )
 
         self.json_teste = json_teste
         self.data_formatada = self.get_data_formatada()
@@ -269,7 +263,15 @@ class DownloadRetroativo:
                 "caminho_arquivo": caminho_arquivo_final
             }]
         }
-        self.banco_falso.inserir(novo_diario)
+        try:
+            response = requests.post(
+                "http://localhost:8000/diario", 
+                json=novo_diario
+            )
+            response.raise_for_status()  # Raise an exception for HTTP errors
+            print(f"Diário salvo na API para {data_formatada}")
+        except requests.RequestException as e:
+            print(f"Erro ao salvar diário na API: {e}")
 
     def verificar_arquivo_existente(self, nome_arquivo):
         data_str = nome_arquivo[2:-4]
@@ -319,7 +321,6 @@ class DownloadRetroativo:
                             print(f"Diário salvo no banco com a data {self.dia_util_formatado} e caminho {caminho_arquivo}")
                             self.dia_util_formatado = manipulator.passar_dia_util_str(self.dia_util_formatado)
                             self.atualizar_data(self.dia_util_formatado)
-                            self.banco_falso.listar_diarios()
                             break
                         else:
                             print(f"Falha ao baixar o arquivo para {self.dia_util_formatado}. Tentando novamente...")

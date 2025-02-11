@@ -172,3 +172,9 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+TJMG
+tests
+captcha.png
+preprocessed_captcha.png
+

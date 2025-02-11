@@ -1,11 +1,6 @@
-__pycache__/
-database/
-src/
-tests/
-TJMG/
-configuration.py
-DataManipulator.py
-BotRetroactiveRead.py
-.python-version
-*.lock
-*.pyc
+__pycache__
+/TJMG
+.gitignore
+captcha.png
+Dockerfile
+preprocessed_captcha.png
