@@ -10,7 +10,7 @@ from .BotRetroactiveRead import DownloadRetroativo
 import threading
 import uvicorn
 
-uri = "mongodb://mongo:27017/"
+uri = "mongodb://luca69892:SeitiRevio!@localhost:27017/diario_db"
 
 client = MongoClient(uri, server_api=ServerApi('1'))
 db = client['diario_db']

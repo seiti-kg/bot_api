@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  selenium-chromium:
-    image: selenium/standalone-chromium:latest
-    container_name: selenium-chromium
+  selenium-firefox:
+    image: selenium/standalone-firefox:latest
+    container_name: selenium-firefox
     ports:
       - "4444:4444"
     restart: always
@@ -17,19 +17,30 @@ services:
     image: bot_retroativo_api:latest
     container_name: download_retroativo
     depends_on:
-      - selenium-chromium
+      - selenium-firefox
     environment:
-      - SELENIUM_HOST=selenium-chromium
+      - SELENIUM_HOST=selenium-firefox
     ports:
       - "8000:8000"
     volumes:
       - /TJMG
-    command: ["poetry", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["/opt/venv/bin/uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    runtime: nvidia
+    networks:
+      - app_network
+
+  mongo:
+    image: mongo
+    container_name: mongo
+    restart: always
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: luca69892
+      MONGO_INITDB_ROOT_PASSWORD: SeitiRevio!
     networks:
       - app_network
 
 networks:
   app_network:
     driver: bridge
-
-

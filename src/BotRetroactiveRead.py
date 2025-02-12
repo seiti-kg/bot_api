@@ -1,13 +1,13 @@
 from selenium import webdriver;
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.firefox.service import Service as FirefoxService
 from selenium.common.exceptions import TimeoutException
-from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.firefox import GeckoDriverManager 
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support.ui import Select
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.firefox.options import Options
 from .DataManipulator import DataManipulator
 
 from datetime import datetime
@@ -28,18 +28,20 @@ class DownloadRetroativo:
         if not os.path.exists(self.download_dir):
             os.makedirs(self.download_dir)
 
-        self.chrome_options = Options()
-        self.chrome_options.binary_location = "/usr/bin/chromium"  
-        self.chrome_options.add_experimental_option("prefs", {
-            "download.default_directory": self.download_dir,
-            "download.prompt_for_download": False,
-            "directory_upgrade": True,
-            "safebrowsing.enabled": "false"
-        })
+        self.firefox_options = Options()
+        self.firefox_options.set_preference("browser.download.folderList", 2)
+        self.firefox_options.set_preference("browser.download.manager.showWhenStarting", False)
+        self.firefox_options.set_preference("browser.download.dir", self.download_dir)
+        self.firefox_options.set_preference("browser.helperApps.neverAsk.saveToDisk", "application/pdf")
+        self.firefox_options.set_preference("pdfjs.disabled", True)
+        self.firefox_options.set_preference("download.overwrite_existing", True)
+        #self.firefox_options.add_argument("--headless")
+
+        self.firefox_service = FirefoxService(executable_path=GeckoDriverManager().install())
 
         self.driver = webdriver.Remote(
-            command_executor='http://localhost:4444/wd/hub', 
-            options=self.chrome_options
+            command_executor='http://selenium-firefox:4444/wd/hub',  
+            options=self.firefox_options
         )
 
         self.json_teste = json_teste
@@ -79,25 +81,32 @@ class DownloadRetroativo:
         
         return img_red
 
-
     def monitorar_download(self, nome_arquivo_base):
-        tentativas = 0
-        while tentativas < 3:
+        tempo_maximo = 60  # 1 minuto de timeout
+        inicio = time.time()
+        
+        while (time.time() - inicio) < tempo_maximo:
             arquivos = os.listdir(self.download_dir)
+            
+            # Verifica se o arquivo final já existe
             for arquivo in arquivos:
-                if arquivo.startswith(nome_arquivo_base) and arquivo.endswith('.crdownload'):
-                    while arquivo.endswith('.crdownload'):
-                        self.slp(1)
-                        arquivos = os.listdir(self.download_dir)
-                        for arquivo_atualizado in arquivos:
-                            if arquivo_atualizado.startswith(nome_arquivo_base) and arquivo_atualizado.endswith('.PDF'):
-                                arquivo = arquivo_atualizado
+                if arquivo == nome_arquivo_base:
+                    print(f"Arquivo final encontrado: {arquivo}")
                     return True
-                elif arquivo.startswith(nome_arquivo_base) and not arquivo.endswith('.crdownload'):
-                    return True
-            self.slp(1)
-            tentativas += 1
+            
+            # Verifica se há um download em andamento
+            for arquivo in arquivos:
+                if arquivo.startswith(nome_arquivo_base) and (arquivo.endswith('.crdownload') or arquivo.endswith('.part')):
+                    print(f"Download em progresso: {arquivo}")
+                    self.slp(2)  # Espera curta para não sobrecarregar
+                    break
+            else:
+                print("Nenhum download em andamento detectado")
+                return False  # Não há download ativo
+        
+        print("Timeout excedido sem sucesso")
         return False
+
 
     def gerar_nome_arquivo(self, data):
         data_obj = datetime.strptime(data, "%d-%m-%Y")
@@ -137,7 +146,8 @@ class DownloadRetroativo:
                 file.write(captcha_element.screenshot_as_png)
             print("Captcha capturado com sucesso!")
         except Exception as e:
-            print(f"Erro ao capturar CAPTCHA: `{e}")
+            print(f"Erro ao capturar CAPTCHA: {e}")
+            return False  # Retorna False se o CAPTCHA não puder ser capturado
 
         self.slp(2)
 
@@ -164,6 +174,7 @@ class DownloadRetroativo:
         print("Captcha enviado!")
 
         self.slp(2)
+        return True  # Retorna True se o CAPTCHA foi resolvido com sucesso
 
     def acessar_site(self, data_para_enviar):
         self.driver.get("https://www.tjmg.jus.br/portal-tjmg/")
@@ -286,48 +297,47 @@ class DownloadRetroativo:
         return False
 
     def executar(self):
-        while True:
+        while True:  # Loop principal para dias
             manipulator = DataManipulator(self.dia_util_formatado)
-            dia_util = manipulator.autenticar_recesso(self.dia_util_formatado)  
+            dia_util = manipulator.autenticar_recesso(self.dia_util_formatado)
 
             if dia_util:
-                print(f"É dia útil! Verificando se há diário.")
+                print(f"É dia útil ({self.dia_util_formatado})! Verificando diário.")
                 self.atualizar_data(self.dia_util_formatado)
-
-                while True:
-                    try: 
-                        if self.buscar_aviso():
-                            print("Indo para o diário mais recente")
-                            dia_util = manipulator.autenticar_recesso(self.dia_util_formatado)
-                            self.atualizar_data(dia_util)
-
-                    finally:
-                        nome_arquivo = self.gerar_nome_arquivo(self.dia_util_formatado)
+                
+                while True:  # Loop de tentativas para o MESMO dia
+                    nome_arquivo = self.gerar_nome_arquivo(self.dia_util_formatado)
+                    
+                    # Verifica se o arquivo JÁ EXISTE antes de qualquer tentativa
+                    if self.verificar_arquivo_existente(nome_arquivo):
+                        print(f"Arquivo {nome_arquivo} já existe. Indo para o próximo dia.")
+                        break  # Sai do loop de tentativas e vai para o próximo dia
+                    
+                    print("Iniciando processo de download...")
+                    
+                    # Tentativa de download
+                    download_completo = self.monitorar_download(nome_arquivo)
+                    
+                    if download_completo:
+                        print(f"Download concluído para {self.dia_util_formatado}!")
+                        self.salvar_diario_no_banco(nome_arquivo, os.path.join(self.download_dir, nome_arquivo))
+                        break  # Sai do loop de tentativas após sucesso
+                    else:
+                        print(f"Falha no download. Tentando resolver CAPTCHA...")
+                        if self.captchaSolver():
+                            print("CAPTCHA resolvido. Recarregando página...")
+                            self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.F5)  # Mais confiável que F5
+                            self.slp(3)
+                            self.atualizar_data(self.dia_util_formatado)  # Reinsere a data
                         
-                        if self.verificar_arquivo_existente(nome_arquivo):
-                            self.dia_util_formatado = manipulator.passar_dia_util_str(self.dia_util_formatado)
-                            self.atualizar_data(self.dia_util_formatado)
-                            continue
+                    # Verificação EXTRA para evitar loop desnecessário
+                    if self.verificar_arquivo_existente(nome_arquivo):
+                        print("Arquivo foi baixado durante o processo!")
+                        break
 
-                        download_completo = self.monitorar_download(nome_arquivo)
-
-                        if download_completo:
-                            print(f"Download concluído para {self.dia_util_formatado}!")
-
-                            caminho_arquivo = os.path.join(self.download_dir, nome_arquivo)
-                            caminho_relativo = os.path.relpath(caminho_arquivo, start=os.getcwd())
-                            self.salvar_diario_no_banco(nome_arquivo, caminho_relativo)
-
-                            print(f"Diário salvo no banco com a data {self.dia_util_formatado} e caminho {caminho_arquivo}")
-                            self.dia_util_formatado = manipulator.passar_dia_util_str(self.dia_util_formatado)
-                            self.atualizar_data(self.dia_util_formatado)
-                            break
-                        else:
-                            print(f"Falha ao baixar o arquivo para {self.dia_util_formatado}. Tentando novamente...")
-                            self.captchaSolver()
-                            self.driver.find_element(By.TAG_NAME, 'body').send_keys(Keys.F5)
-                            self.slp(1)
-
+                # Atualiza para o próximo dia útil APÓS conclusão ou falha
+                self.dia_util_formatado = manipulator.passar_dia_util_str(self.dia_util_formatado)
+                
             else:
                 print(f"Próximo dia útil: {self.dia_util_formatado}")
                 self.atualizar_data(self.dia_util_formatado)
